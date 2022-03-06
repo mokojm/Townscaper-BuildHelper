@@ -51,7 +51,7 @@ https://github.com/LavaGang/MelonLoader/releases/latest/
 2.4. During the installation a "Mods" folder gets created it your game folder. MelonLoader does not(!) change any game files. 
 	 You can uninstall anytime through the installer or by deleting the "version.dll" file.
 
-3. Download the mod (latest release) by clicking [here]()
+3. Download the mod (latest release) by clicking [here](https://github.com/mokojm/Townscaper-BuildHelper/releases/download/v0.8.0/BuildHelper.zip)
 
 4. Extract all the files from "BuildHelper.zip" into your games Mods folder.
 
