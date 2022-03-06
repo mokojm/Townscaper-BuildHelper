@@ -20,10 +20,14 @@ namespace BuildHelper
 
 			myModSettings = UIManager.Register(thisMod, new Color32(243, 227, 182, 255));
 
-			myModSettings.AddToggle("Fixed Height", "General", new Color32(243, 227, 182, 255), BuildHelperMain.fixedHeight, new Action<bool>(delegate (bool value) { BuildHelperMain.fixedHeight = value; }));
-			myModSettings.AddInputField("Height", "General", new Color32(255, 179, 174, 255), TMP_InputField.ContentType.Alphanumeric, "0", new Action<string>(delegate (string value) { FixedHeightInput(value); }));
-			refInputField = myModSettings.controlInputFields["Height"].GetComponent<UnityEngine.UI.InputField>();
+			myModSettings.AddToggle("Fixed Height", "General", new Color32(243, 227, 182, 255), BuildHelperMain.fixedHeight, new Action<bool>(delegate (bool value) { FixedHeightToggle(value); }));
+			/*myModSettings.AddInputField("Height", "General", new Color32(255, 179, 174, 255), TMP_InputField.ContentType.Alphanumeric, "0", new Action<string>(delegate (string value) { FixedHeightInput(value); }));
+			refInputField = myModSettings.controlInputFields["Height"].GetComponent<UnityEngine.UI.InputField>();*/
 
+			// Mod Setting management for keyboard shortcuts
+			Apply();
+
+			//Keyboard shortcuts button creation
 			myModSettings.AddKeybind("Add", "Input", BuildHelperMain.AddVoxelHeightKey, new Color32(10, 190, 124, 255));
 			myModSettings.AddKeybind("Add blocks", "Input", BuildHelperMain.AddVoxelsKey, new Color32(10, 190, 124, 255));
 			myModSettings.AddKeybind("Remove blocks", "Input", BuildHelperMain.RemoveVoxelsKey, new Color32(10, 190, 124, 255));
@@ -36,6 +40,12 @@ namespace BuildHelper
 			isInitialized = true;
 		}
 
+		public static void FixedHeightToggle(bool value)
+        {
+			BuildHelperMain.fixedHeight = value;
+			BuildHelperMain.height = 0;
+			BuildHelperMain.ResetSphere();
+		}
 		public static void FixedHeightInput(string value)
         {
 			if (int.TryParse(value, out int validHeight) && validHeight >= 0 && validHeight < 256)
@@ -47,6 +57,7 @@ namespace BuildHelper
 				refInputField.text = BuildHelperMain.height.ToString();
             }
         }
+
 		public static void Apply()
 		{
 			myModSettings.GetValueKeyCode("Add", "Input", out BuildHelperMain.AddVoxelHeightKey);

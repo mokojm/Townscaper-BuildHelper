@@ -29,15 +29,31 @@ namespace BuildHelper
 		//Keyboard
 		public static KeyCode AddVoxelsKey = KeyCode.F;
 		public static KeyCode RemoveVoxelsKey = KeyCode.G;
-		public static KeyCode AddVoxelHeightKey = KeyCode.H;
-		public static KeyCode RemoveVoxelsRayKey = KeyCode.J;
-		public static KeyCode PaintVoxelsKey = KeyCode.K;
+		public static KeyCode AddVoxelHeightKey = KeyCode.Space;
+		public static KeyCode RemoveVoxelsRayKey = KeyCode.H;
+		public static KeyCode PaintVoxelsKey = KeyCode.J;
 
 		public static bool AddVoxelsKeyB = false;
 		public static bool RemoveVoxelsKeyB = false;
 		public static bool AddVoxelHeightKeyB = false;
 		public static bool RemoveVoxelsRayKeyB = false;
 		public static bool PaintVoxelsKeyB = false;
+
+		//PaintVoxel check to make sure one voxel is painted at a time
+		public static bool painterLocked = false;
+
+		//Fixed height
+		public static GameObject sphere;
+
+		//Time management for AddVoxelHeight
+		public static float thisTime;
+		public static bool addVoxHPressed = false;
+
+		//Time management for Sphere
+		public static float sphereTime;
+
+		//MainCamera check for identifying whether FPS mod is "ON" or not
+		public static Camera mainCam;
 
 
 		//Methods
@@ -52,9 +68,22 @@ namespace BuildHelper
 				clickEffect = hover.master.clickEffect;
 				voxelColor = (VoxelType)hover.master.uiMaster.paletteMenu.selectedPickerIndex;
 
+				//Initialize sphere
+				sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+				sphere.transform.position = new Vector3(0, 0, 0);
+				sphere.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+				sphere.GetComponent<MeshRenderer>().material = GameObject.Find("HoverHightlight").GetComponent<MeshRenderer>().material;
+				sphere.GetComponent<MeshRenderer>().material.color = new Color(1, 1, 1, 0.5f);
+				sphere.SetActive(fixedHeight);
+
+				//Initialize mainCamera
+				mainCam = GameObject.FindWithTag("MainCamera").GetComponent<Camera>();
+
 				isInitialized = true;
             }
         }
+
+
 
 		public static Voxel SearchVoxel(int2 hexPos, int dstHeight)
 		{
@@ -106,7 +135,7 @@ namespace BuildHelper
 		//Build at a specific height
 		public static void AddVoxelHeight()
         {
-			if (fixedHeight == false)
+			if (fixedHeight == false || !mainCam.isActiveAndEnabled)
             {
 				return;
             }
@@ -188,7 +217,7 @@ namespace BuildHelper
 		//Remove several voxels
 		public static void RemoveVoxels()
         {
-			int dstHeight = fixedHeight ? height - 1 : hover.dstHeight - 1;
+			int dstHeight = hover.srcHeight;
 			dstHeight = dstHeight < 0 ? 0 : dstHeight;
 			//int dstHeight = height == 999 ? hover.dstHeight - 1 : height - 1;
 			
@@ -237,12 +266,14 @@ namespace BuildHelper
 					maker.AddAction(hexPos, (byte)dstHeight, srcVoxelColor, VoxelType.Empty);
 					graph.RemoveVoxel(voxel);
 					maker.EndAction();
+					painterLocked = true;
 					yield return new WaitForSeconds(.1f);
 
 					maker.BeginNewAction();
 					graph.AddVoxel(hexPos, (byte)dstHeight, voxelColor, true);
 					maker.AddAction(hexPos, (byte)dstHeight, VoxelType.Empty, voxelColor);
 					maker.EndAction();
+					painterLocked = false;
 
 					clickEffect.Click(hover, true, voxel);
 				}
@@ -251,7 +282,10 @@ namespace BuildHelper
 
 		public static void StartPaintVoxels()
         {
-			MelonCoroutines.Start(PaintVoxels());
+			if (painterLocked == false)
+            {
+				MelonCoroutines.Start(PaintVoxels());
+			}
         }
 
 
@@ -268,11 +302,37 @@ namespace BuildHelper
 			}
 		}
 
-
-		public static void Initialize()
+		public static void ResetSphere()
         {
+			sphere.transform.position = hover.pointerHitPos;
+		}
 
-        }
+		public static void UpdateSphere(float upDown = 0)
+        {
+			/*float x = hover.srcVert.hexPos.x;
+			float z = hover.srcVert.hexPos.y;
+			float y = sphere.transform.position.y;*/
+
+			float x = hover.pointerHitPos.x;
+			float z = hover.pointerHitPos.z;
+			float y = sphere.transform.position.y;
+
+			if (upDown == 0)
+            {
+				sphere.transform.position = new Vector3(x, y, z);
+				//sphere.transform.position = new Vector3(hover.pointerHitPos.x, sphere.transform.position.y, hover.pointerHitPos.z);
+			}
+			else if (upDown == 1)
+            {
+				sphere.transform.position = new Vector3(x, y+1, z);
+				//sphere.transform.position = new Vector3(hover.pointerHitPos.x, sphere.transform.position.y + 1, hover.pointerHitPos.z);
+			}
+			else if (sphere.transform.position.y > 1)
+            {
+				sphere.transform.position = new Vector3(x, y-1, z);
+				//sphere.transform.position = new Vector3(hover.pointerHitPos.x, sphere.transform.position.y - 1, hover.pointerHitPos.z);
+			}
+		}
 
 		public static void Reset()
 		{
@@ -307,15 +367,27 @@ namespace BuildHelper
 					RemoveVoxelsKeyB = false;
 				}
 
-				if (Input.GetKey(AddVoxelHeightKey))
+				//Add voxel height input management
+				if (Input.GetKeyDown(AddVoxelHeightKey))
 				{
+					thisTime = Time.time;
 					AddVoxelHeightKeyB = true;
+					addVoxHPressed = true;
+					sphere.SetActive(false);
 				}
 				else if (Input.GetKeyUp(AddVoxelHeightKey))
 				{
 					AddVoxelHeightKeyB = false;
+					addVoxHPressed = false;
 				}
 
+				if (addVoxHPressed && Time.time - thisTime > 1)
+				{
+					AddVoxelHeightKeyB = true;
+				}
+
+
+				//Others
 				if (Input.GetKeyDown(RemoveVoxelsRayKey))
 				{
 					RemoveVoxelsRayKeyB = true;
@@ -333,6 +405,30 @@ namespace BuildHelper
 				{
 					PaintVoxelsKeyB = false;
 				}
+
+				//Sphere update
+				if (Input.GetKeyDown(KeyCode.LeftAlt))
+                {
+					UpdateSphere(1);
+					height = height < 255 ? height + 1 : height;
+					sphere.SetActive(fixedHeight);
+					sphereTime = Time.time;
+                }
+				else if (Input.GetKeyDown(KeyCode.LeftControl))
+                {
+					UpdateSphere(-1);
+					height = height > 0 ? height - 1 : height;
+					sphere.SetActive(fixedHeight);
+					sphereTime = Time.time;
+				}
+				else if (Time.time - sphereTime > 10)
+                {
+					sphere.SetActive(false);
+				}
+				else
+                {
+					UpdateSphere();
+                }
 			}
 		}
 	}

@@ -12,6 +12,7 @@ namespace BuildHelper
 			
 			public static void Postfix(ref HoverData __instance)
 			{
+				
 				if (BuildHelperMain.isInitialized == false)
 				{
 					BuildHelperMain.Initialize(__instance);
