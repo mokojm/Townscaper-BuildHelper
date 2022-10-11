@@ -1,10 +1,24 @@
 ﻿using Placemaker;
+using Placemaker.Ui;
 using System.Collections;
+using ModUI;
+using MelonLoader;
 
 namespace BuildHelper
 {
 	public class Harmony_Main
 	{
+		[HarmonyLib.HarmonyPatch(typeof(SideMenu), "Button_Quit_Full")]
+		public class BuildQuit
+		{
+			public static void Prefix(ref SideMenu __instance)
+			{
+				MelonLogger.Msg("A");
+				HelperUI.RadiusSlider.textField.text = "Radius";
+				UIManager.ToggleUI();
+			}
+		}
+
 		[HarmonyLib.HarmonyPatch(typeof(HoverData), "SetHover")]
 		public class BuildHelper
 		{
@@ -36,12 +50,12 @@ namespace BuildHelper
 					{
 						BuildHelperMain.AddVoxelHeightKeyB = false;
 						BuildHelperMain.AddVoxelHeight();
+						BuildHelperMain.speedLock = true;
 					}
 
 					if (BuildHelperMain.RemoveVoxelsRayKeyB)
 					{
-						BuildHelperMain.RemoveVoxelsRayKeyB = false;
-						BuildHelperMain.RemoveVoxelsRay();
+						BuildHelperMain.RemoveHandler();
 					}
 
 					if (BuildHelperMain.PaintVoxelsKeyB)

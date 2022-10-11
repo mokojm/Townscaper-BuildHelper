@@ -12,8 +12,13 @@ namespace BuildHelper
 		public static MelonMod myMod;
 		public static ModSettings myModSettings;
 		public static UnityEngine.UI.InputField refInputField;
+		public static DZSlider RadiusSlider;
+		public static SelectionButton refRemoveMode;
 
 		public static bool isInitialized;
+
+		public static int maxSpeed;
+		public static int maxRadius;
 
 		public static void Initialize(MelonMod thisMod)
 		{
@@ -27,17 +32,60 @@ namespace BuildHelper
 			// Mod Setting management for keyboard shortcuts
 			Apply();
 
+			//Speed and Radius management
+			maxSpeed = myModSettings.GetValueInt("MaxSpeed", "General", out maxSpeed) ? maxSpeed : BuildHelperMain.maxSpeed;
+			maxRadius = myModSettings.GetValueInt("MaxRadius", "General", out maxRadius) ? maxRadius : BuildHelperMain.maxRadius;
+
 			//Keyboard shortcuts button creation
-			myModSettings.AddKeybind("Add", "Input", BuildHelperMain.AddVoxelHeightKey, new Color32(10, 190, 124, 255));
-			myModSettings.AddKeybind("Add blocks", "Input", BuildHelperMain.AddVoxelsKey, new Color32(10, 190, 124, 255));
-			myModSettings.AddKeybind("Remove blocks", "Input", BuildHelperMain.RemoveVoxelsKey, new Color32(10, 190, 124, 255));
-			myModSettings.AddKeybind("Remove line blocks", "Input", BuildHelperMain.RemoveVoxelsRayKey, new Color32(10, 190, 124, 255));
-			myModSettings.AddKeybind("Paint", "Input", BuildHelperMain.PaintVoxelsKey, new Color32(10, 190, 124, 255));
+			myModSettings.AddKeybind("Single", "Add", BuildHelperMain.AddVoxelHeightKey, new Color32(10, 190, 124, 255));
+			myModSettings.AddKeybind("Many blocks", "Add", BuildHelperMain.AddVoxelsKey, new Color32(10, 190, 124, 255));
+			myModSettings.AddSlider("Radius", "General", new Color32(119, 206, 224, 255), 1, maxRadius, true, BuildHelperMain.radius, new Action<float>(delegate (float value) { UpdateRadius(value); }));
+			RadiusSlider = myModSettings.controlSliders["Radius"].GetComponent<DZSlider>();
+
+			//Speed control for Add/Remove
+			myModSettings.AddSlider("Speed", "General", new Color32(119, 206, 224, 255), 3, maxSpeed, true, maxSpeed - BuildHelperMain.speed, new Action<float>(delegate (float value) { BuildHelperMain.speed = maxSpeed - (int)value + 1; }));
+			refRemoveMode = myModSettings.AddSelectionButton
+				("SelectMode",
+				"Remove",
+				new Color32(119, 206, 224, 255),
+				new Action(delegate { UpdateMode(true); }),
+				new Action(delegate { UpdateMode(false); }),
+				BuildHelperMain.modes[BuildHelperMain.mode]);
+
+			myModSettings.GetValueString("SelectMode", "Remove", out string mode);
+			BuildHelperMain.mode = Array.IndexOf(BuildHelperMain.modes, mode);
+
+			myModSettings.AddKeybind("Custom", "Remove", BuildHelperMain.RemoveVoxelsRayKey, new Color32(10, 190, 124, 255));
+			myModSettings.AddKeybind("Many delete", "Remove", BuildHelperMain.RemoveVoxelsKey, new Color32(10, 190, 124, 255));
+			myModSettings.AddKeybind("Paint", "Paint", BuildHelperMain.PaintVoxelsKey, new Color32(10, 190, 124, 255));
 
 			//Apply button
 			myModSettings.AddButton("Apply Settings", "General", new Color32(243, 227, 182, 255), new Action(delegate { Apply(); }));
 
+			UpdateRadius(BuildHelperMain.radius);
+
 			isInitialized = true;
+
+		}
+
+		public static void UpdateRadius(float value)
+        {
+			BuildHelperMain.radius = (int)value;
+
+			RadiusSlider.textField.text = "Radius : " + value.ToString();
+		}
+
+		public static void UpdateMode(bool prev)
+        {
+			if (prev)
+            {
+				BuildHelperMain.mode = BuildHelperMain.mode == 0 ? 2 : BuildHelperMain.mode - 1;
+			}
+			else
+            {
+				BuildHelperMain.mode = BuildHelperMain.mode == 2 ? 0 : BuildHelperMain.mode + 1;
+			}
+			refRemoveMode.selectValue = BuildHelperMain.modes[BuildHelperMain.mode];
 		}
 
 		public static void FixedHeightToggle(bool value)

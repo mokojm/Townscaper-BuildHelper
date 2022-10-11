@@ -3,15 +3,17 @@ using Placemaker;
 using Placemaker.Graphs;
 using Placemaker.Quads;
 using Placemaker.Quads.GridGeneration;
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Threading;
 using Unity.Mathematics;
 using UnityEngine;
 
 namespace BuildHelper
 {
-    public class BuildHelperMain : MelonMod
-    {
+	public class BuildHelperMain : MelonMod
+	{
 
 		//Objects
 		public static HoverData hover;
@@ -23,8 +25,13 @@ namespace BuildHelper
 		public static bool isInitialized = false;
 
 		//UI
+		public static int radius = 3;
+		public static int maxRadius = 8;
+
 		public static int height = 0;
 		public static bool fixedHeight = false;
+
+		public static int maxSpeed = 100;
 
 		//Keyboard
 		public static KeyCode AddVoxelsKey = KeyCode.F;
@@ -44,6 +51,14 @@ namespace BuildHelper
 
 		//Fixed height
 		public static GameObject sphere;
+
+		//Add/Remove speed
+		public static int speed = 15;
+		public static bool speedLock = false;
+
+		//Remove mode
+		public static string[] modes = { "Single", "Corner", "Ray" };
+		public static int mode = 0;
 
 		//Time management for AddVoxelHeight
 		public static float thisTime;
@@ -83,13 +98,13 @@ namespace BuildHelper
             }
         }
 
-
-
+		//Search a voxel given its position and height
 		public static Voxel SearchVoxel(int2 hexPos, int dstHeight)
 		{
 			if (graph.cornerDict.ContainsKey(hexPos))
 			{
 				Corner corner = graph.cornerDict.get_Item(hexPos);
+				//MelonLogger.Msg("Squares : " + corner.squares.Count.ToString());
 				if (corner == null)
 				{
 					return null;
@@ -104,6 +119,32 @@ namespace BuildHelper
 			}
 			return null;
 		}
+
+		//Remove all voxels from a corner
+		public static void RemoveCorner()
+        {
+			if (graph.cornerDict.ContainsKey(hover.srcHexPos))
+			{
+				Corner corner = graph.cornerDict.get_Item(hover.srcHexPos);
+
+				if (corner == null)
+				{
+					return;
+				}
+                FlowData[] flowDatas = corner.flowDatas.ToArray();
+				foreach (FlowData item in flowDatas)
+				{
+					if (item.voxel != null)
+					{
+						maker.BeginNewAction();
+						maker.AddAction(hover.srcHexPos, item.voxel.height, item.voxel.type, VoxelType.Empty);
+						graph.RemoveVoxel(item.voxel);
+						maker.EndAction();
+					}
+				}
+			}
+		}
+
 
 		//Remove all voxels on the Raycast
 		public static void RemoveVoxelsRay()
@@ -132,15 +173,49 @@ namespace BuildHelper
             }
         }
 
-		//Build at a specific height
+		//Remove a single voxel from the grid, can remove at a specific height
+		public static void RemoveSingle()
+        {
+			if (!mainCam.isActiveAndEnabled)
+			{
+				return;
+			}
+
+			//Speed handling
+			if (Time.frameCount % speed != 0 && speedLock)
+			{
+				return;
+			}
+
+			int targetHeight = !fixedHeight ? hover.srcHeight : height;
+			Voxel thisVoxel = SearchVoxel(hover.srcHexPos, targetHeight);
+
+			if (thisVoxel != null && thisVoxel.type != VoxelType.Empty && thisVoxel.type != VoxelType.Water && thisVoxel.type != VoxelType.Any)
+			{
+				maker.BeginNewAction();
+				maker.AddAction(hover.srcHexPos, (byte)targetHeight, thisVoxel.type, VoxelType.Empty);
+				graph.RemoveVoxel(thisVoxel);
+				maker.EndAction();
+				Vert thisVert = hover.master.grid.GetVertOrIterate(hover.srcHexPos, null);
+				clickEffect.Click(true, thisVert.planePos, targetHeight, voxelColor);
+			}
+		}
+
+		//Build at a specific height, can build at no specific height too
 		public static void AddVoxelHeight()
         {
-			if (fixedHeight == false || !mainCam.isActiveAndEnabled)
+			if (!mainCam.isActiveAndEnabled)
             {
 				return;
             }
 
-			hover.dstHeight = height;
+			//Speed handling
+			if (Time.frameCount % speed != 0 && speedLock)
+            {
+				return;
+            }
+
+			hover.dstHeight = !fixedHeight ? hover.dstHeight : height;
 			Voxel thisVoxel = SearchVoxel(hover.dstHexPos, hover.dstHeight);
 			if (thisVoxel != null && thisVoxel.type != VoxelType.Empty && thisVoxel.type != VoxelType.Water && thisVoxel.type != VoxelType.Any)
 			{
@@ -155,7 +230,173 @@ namespace BuildHelper
 			}
 		}
 
-		//Add several voxels
+		//Remove voxels according to radius at the height of the cursor
+		public static IEnumerator RemoveVoxel3s()
+        {
+			int dstHeight = !fixedHeight ? hover.srcHeight : height;
+			dstHeight = dstHeight < 0 ? 0 : dstHeight;
+
+			//Initialize queue
+			Queue<Corner> corners = new Queue<Corner>();
+			HashSet<int2> checkedCorners = new HashSet<int2>();
+
+			
+			if (hover.voxel != null && hover.voxel.type != VoxelType.Empty && hover.voxel.type != VoxelType.Any && hover.voxel.type != VoxelType.Water)
+			{
+				maker.BeginNewAction();
+				maker.AddAction(hover.srcHexPos, (byte)dstHeight, hover.voxel.type, VoxelType.Empty);
+				graph.RemoveVoxel(hover.voxel);
+				maker.EndAction();
+				clickEffect.Click(hover, false, hover.voxel);
+			}
+
+			int2 firstHexPos = hover.srcHexPos;
+			yield return new WaitForEndOfFrame();
+
+			Corner corner;
+
+			try
+            {
+				corner = graph.cornerDict.get_Item(firstHexPos);
+
+			}
+            catch (Exception)
+            {
+
+                yield break;
+            }
+
+			Voxel thisVox;
+			int count;
+			Square[] squares;
+			corners.Enqueue(corner);
+			checkedCorners.Add(corner.hexPos);
+
+			for (int i = 0; i < radius; i++)
+			{
+				count = corners.Count;
+				for (int j = 0; j < count; j++)
+				{
+					corner = corners.Dequeue();
+					squares = corner.squares.ToArray();
+
+					foreach (Square square in squares)
+					{
+						HashSet<Corner> thisSquareCorners = new HashSet<Corner>() { square.GetCorner(0), square.GetCorner(1), square.GetCorner(2), square.GetCorner(3) };
+						foreach (Corner c in thisSquareCorners)
+						{
+							//Emergency stop
+							if (Input.GetKeyDown(AddVoxelsKey) || Input.GetKeyDown(KeyCode.Escape))
+                            {
+								yield break;
+                            }
+
+							if (c != null && checkedCorners.Contains(c.hexPos) == false)
+							{
+								thisVox = SearchVoxel(c.hexPos, dstHeight);
+								if (thisVox != null)
+								{
+									maker.BeginNewAction();
+									maker.AddAction(c.hexPos, (byte)dstHeight, thisVox.type, VoxelType.Empty);
+									graph.RemoveVoxel(thisVox);
+									maker.EndAction();
+									yield return new WaitForSeconds(.02f);
+								}
+
+								if (i + 1 < radius)
+								{
+									corners.Enqueue(c);
+								}
+
+								checkedCorners.Add(c.hexPos);
+							}
+						}
+					}
+				}
+
+				yield return new WaitForEndOfFrame();
+			}
+			corners.Clear();
+			checkedCorners.Clear();
+		}
+
+		//Add voxels coording to radius at the height of the cursor or at a specific height
+		public static IEnumerator AddVoxel3s()
+        {
+
+			hover.dstHeight = !fixedHeight ? hover.dstHeight : height;
+			int iHeight = hover.dstHeight;
+
+			//Initialize queue
+			Queue<Corner> corners = new Queue<Corner>();
+			HashSet<int2> checkedCorners = new HashSet<int2>();
+
+			Voxel thisVoxel = SearchVoxel(hover.dstHexPos, hover.dstHeight);
+			if (thisVoxel != null && thisVoxel.type != VoxelType.Empty && thisVoxel.type != VoxelType.Water && thisVoxel.type != VoxelType.Any)
+			{
+			}
+			else if (hover.validAdd)
+			{
+				Voxel voxel = maker.AddClick(hover, voxelColor);
+				hover.dstHeight = height;
+				clickEffect.Click(hover, true, voxel);
+			}
+
+			int2 firstHexPos = hover.dstHexPos;
+			yield return new WaitForEndOfFrame();
+
+			Corner corner = graph.cornerDict.get_Item(firstHexPos);
+			int count = corners.Count;
+			corners.Enqueue(corner);
+			checkedCorners.Add(corner.hexPos);
+
+            for (int i = 0; i < radius; i++)
+            {
+				count = corners.Count;
+				for (int j = 0; j < count; j++)
+                {
+					corner = corners.Dequeue();
+
+					foreach (Square square in corner.squares)
+					{
+						HashSet<Corner> thisSquareCorners = new HashSet<Corner>() { square.GetCorner(0), square.GetCorner(1), square.GetCorner(2), square.GetCorner(3) };
+						foreach (Corner c in thisSquareCorners)
+						{
+							//Emergency stop
+							if (Input.GetKeyDown(RemoveVoxelsKey) || Input.GetKeyDown(KeyCode.Escape))
+							{
+								yield break;
+							}
+
+							if (c != null && checkedCorners.Contains(c.hexPos) == false)
+							{
+								if (SearchVoxel(c.hexPos, iHeight) == null)
+								{
+									maker.BeginNewAction();
+									graph.AddVoxel(c.hexPos, (byte)iHeight, voxelColor, true);
+									maker.AddAction(c.hexPos, (byte)iHeight, VoxelType.Empty, voxelColor);
+									maker.EndAction();
+									yield return new WaitForSeconds(.02f);
+								}
+
+								if (i + 1 < radius)
+								{
+									corners.Enqueue(c);
+								}
+
+								checkedCorners.Add(c.hexPos);
+							}
+						}
+					}
+				}
+
+				yield return new WaitForEndOfFrame();
+			}
+			corners.Clear();
+			checkedCorners.Clear();
+		}
+
+		//DEPRECATED : Add several voxels
 		public static IEnumerator AddVoxelsSlow()
         {
 			int dstHeight = fixedHeight ? height : hover.dstHeight;
@@ -183,9 +424,10 @@ namespace BuildHelper
 				}
 			}
 		}
+		
 
-		//Add several voxels
-		public static void AddVoxels()
+		//DEPRECATED : Add several voxels
+		public static void AddVoxel2s()
 		{
 			int dstHeight = fixedHeight ? height : hover.dstHeight;
 			//dstHeight = dstHeight == 999 ? dstHeight = hover.dstHeight : dstHeight;
@@ -209,13 +451,9 @@ namespace BuildHelper
 			}
 		}
 
-		public static void StartAddVoxels()
-		{
-			MelonCoroutines.Start(AddVoxelsSlow());
-		}
 
-		//Remove several voxels
-		public static void RemoveVoxels()
+		//DEPRECATED : Remove several voxels
+		public static void RemoveVoxel2s()
         {
 			int dstHeight = hover.srcHeight;
 			dstHeight = dstHeight < 0 ? 0 : dstHeight;
@@ -280,6 +518,32 @@ namespace BuildHelper
 			}
 		}
 
+		//Coroutines starters
+		public static void AddVoxels()
+        {
+			if (!mainCam.isActiveAndEnabled)
+			{
+				return;
+			}
+			else
+            {
+				MelonCoroutines.Start(AddVoxel3s());
+			}
+
+		}
+
+		public static void RemoveVoxels()
+        {
+			if (!mainCam.isActiveAndEnabled)
+			{
+				return;
+			}
+			else
+			{
+				MelonCoroutines.Start(RemoveVoxel3s());
+			}
+		}
+
 		public static void StartPaintVoxels()
         {
 			if (painterLocked == false)
@@ -287,6 +551,21 @@ namespace BuildHelper
 				MelonCoroutines.Start(PaintVoxels());
 			}
         }
+
+		//Segregate remove selected option
+		public static void RemoveHandler()
+        {
+			if (mode == 2)
+            {
+				RemoveVoxelsRayKeyB = false;
+				RemoveVoxelsRay();
+			}
+			else if (mode == 1)
+            {
+				RemoveVoxelsRayKeyB = false;
+				RemoveCorner();
+			}
+		}
 
 
 		public override void OnSceneWasLoaded(int buildIndex, string sceneName)
@@ -379,9 +658,10 @@ namespace BuildHelper
 				{
 					AddVoxelHeightKeyB = false;
 					addVoxHPressed = false;
+					speedLock = false;
 				}
 
-				if (addVoxHPressed && Time.time - thisTime > 1)
+				if (addVoxHPressed && Time.time - thisTime > 0.2)
 				{
 					AddVoxelHeightKeyB = true;
 				}
@@ -397,7 +677,19 @@ namespace BuildHelper
 					RemoveVoxelsRayKeyB = false;
 				}
 
-				if (Input.GetKey(PaintVoxelsKey))
+				//Remove SIngle
+				if (Input.GetKey(RemoveVoxelsRayKey) && mode == 0)
+                {
+					RemoveSingle();
+					speedLock = true;
+                }
+				if (Input.GetKeyUp(RemoveVoxelsRayKey) && mode == 0)
+                {
+					speedLock = false;
+                }
+
+					//Paint
+					if (Input.GetKey(PaintVoxelsKey))
 				{
 					PaintVoxelsKeyB = true;
 				}
